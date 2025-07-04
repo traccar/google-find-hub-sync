@@ -12,18 +12,24 @@ from Auth.fcm_receiver import FcmReceiver
 from NovaApi.ExecuteAction.LocateTracker.decrypt_locations import extract_locations
 
 app = Flask(__name__)
-API_KEY = None
+API_TOKEN = None
 
 
-def _require_api_key():
-    key = request.args.get('api_key') or request.headers.get('X-API-Key')
-    if API_KEY and key != API_KEY:
-        abort(401, description="Invalid API key")
+def _require_bearer_token():
+    """
+    Enforce an Authorization: Bearer <token> header.
+    Falls back to 401 if header is missing / malformed / wrong.
+    """
+    auth_header = request.headers.get('Authorization', '')
+    # Expect exactly:  "Bearer <token-value>"
+    scheme, _, token = auth_header.partition(' ')
+    if scheme.lower() != 'bearer' or not token or token != API_TOKEN:
+        abort(401, description='Invalid or missing bearer token')
 
 
 @app.before_request
 def before_request():
-    _require_api_key()
+    _require_bearer_token()
 
 
 @app.route('/devices', methods=['GET'])
@@ -35,7 +41,17 @@ def list_devices():
     return jsonify({'devices': devices})
 
 
+def _ensure_event_loop():
+    try:
+        asyncio.get_running_loop()
+    except RuntimeError:
+        loop = asyncio.new_event_loop()
+        asyncio.set_event_loop(loop)
+
+
 def _fetch_location(device_id):
+    _ensure_event_loop()
+
     result = None
     request_uuid = generate_random_uuid()
 
@@ -62,14 +78,14 @@ def get_device_location(device_id):
 
 
 def main():
-    parser = argparse.ArgumentParser(description="Device microservice")
-    parser.add_argument('--api-key', required=True, help='API key to secure the endpoints')
+    parser = argparse.ArgumentParser(description="Google Find Hub Sync")
+    parser.add_argument('--auth-token', required=True, help='Bearer token that clients must supply')
     parser.add_argument('--host', default='0.0.0.0')
-    parser.add_argument('--port', type=int, default=5000)
+    parser.add_argument('--port', type=int, default=5500)
     args = parser.parse_args()
 
-    global API_KEY
-    API_KEY = args.api_key
+    global API_TOKEN
+    API_TOKEN = args.auth_token
 
     app.run(host=args.host, port=args.port)
 
