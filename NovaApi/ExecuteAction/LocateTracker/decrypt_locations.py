@@ -66,6 +66,57 @@ def retrieve_identity_key(device_registration: DeviceRegistration) -> bytes:
             print(f"Failed to decrypt identity key encrypted with owner key version {encrypted_user_secrets.ownerKeyVersion}, current owner key version is {current_owner_key_version}.\nThis may happen if you reset your end-to-end-encrypted data. To resolve this issue, open the folder 'Auth' and delete the file 'secrets.json'.")
             exit(1)
 
+# Extract location details for programmatic use
+# Returns a list of dictionaries containing location data
+
+def extract_locations(device_update_protobuf):
+    device_registration = device_update_protobuf.deviceMetadata.information.deviceRegistration
+    identity_key = retrieve_identity_key(device_registration)
+    locations_proto = device_update_protobuf.deviceMetadata.information.locationInformation.reports.recentLocationAndNetworkLocations
+    is_mcu = is_mcu_tracker(device_registration)
+
+    recent_location = locations_proto.recentLocation
+    recent_location_time = locations_proto.recentLocationTimestamp
+
+    network_locations = list(locations_proto.networkLocations)
+    network_locations_time = list(locations_proto.networkLocationTimestamps)
+
+    if locations_proto.HasField("recentLocation"):
+        network_locations.append(recent_location)
+        network_locations_time.append(recent_location_time)
+
+    locations = []
+    for loc, time in zip(network_locations, network_locations_time):
+        if loc.status == Common_pb2.Status.SEMANTIC:
+            locations.append({
+                "time": int(time.seconds),
+                "status": int(loc.status),
+                "semantic_name": loc.semanticLocation.locationName
+            })
+        else:
+            encrypted_location = loc.geoLocation.encryptedReport.encryptedLocation
+            public_key_random = loc.geoLocation.encryptedReport.publicKeyRandom
+            if public_key_random == b"":
+                identity_key_hash = hashlib.sha256(identity_key).digest()
+                decrypted_location = decrypt_aes_gcm(identity_key_hash, encrypted_location)
+            else:
+                time_offset = 0 if is_mcu else loc.geoLocation.deviceTimeOffset
+                decrypted_location = decrypt(identity_key, encrypted_location, public_key_random, time_offset)
+            proto_loc = DeviceUpdate_pb2.Location()
+            proto_loc.ParseFromString(decrypted_location)
+            locations.append({
+                "latitude": proto_loc.latitude / 1e7,
+                "longitude": proto_loc.longitude / 1e7,
+                "altitude": proto_loc.altitude,
+                "time": int(time.seconds),
+                "accuracy": loc.geoLocation.accuracy,
+                "status": int(loc.status),
+                "is_own_report": loc.geoLocation.encryptedReport.isOwnReport
+            })
+    return locations
+
+
+
 
 def decrypt_location_response_locations(device_update_protobuf):
 
