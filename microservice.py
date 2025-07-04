@@ -54,12 +54,7 @@ def _restore_jobs():
 
 
 def _require_bearer_token():
-    """
-    Enforce an Authorization: Bearer <token> header.
-    Falls back to 401 if header is missing / malformed / wrong.
-    """
     auth_header = request.headers.get('Authorization', '')
-    # Expect exactly:  "Bearer <token-value>"
     scheme, _, token = auth_header.partition(' ')
     if scheme.lower() != 'bearer' or not token or token != API_TOKEN:
         abort(401, description='Invalid or missing bearer token')
@@ -110,7 +105,6 @@ def _fetch_location(device_id):
 
 
 def _get_latest_location(locations):
-    # Pick the location with the latest timestamp that has coordinates
     with_coords = [l for l in locations if 'latitude' in l and 'longitude' in l]
     if not with_coords:
         return None
@@ -184,23 +178,25 @@ def start_periodic_upload(device_id):
         abort(400, description='Invalid interval')
     if interval <= 0:
         abort(400, description='Interval must be > 0')
-    if device_id in periodic_jobs:
-        abort(400, description='Job already running')
 
-    job = PeriodicUploader(device_id, interval)
-    periodic_jobs[device_id] = job
-    job.start()
+    old_job = periodic_jobs.pop(device_id, None)
+    if old_job:
+        old_job.stop()
+
+    new_job = PeriodicUploader(device_id, interval)
+    periodic_jobs[device_id] = new_job
+    new_job.start()
     _save_jobs_to_disk()
+
     return jsonify({'status': 'started', 'interval': interval})
 
 
 @app.route('/devices/<device_id>/position-stop', methods=['POST'])
 def stop_periodic_upload(device_id):
     job = periodic_jobs.pop(device_id, None)
-    if not job:
-        abort(404, description='No running job for device')
-    job.stop()
-    _save_jobs_to_disk()
+    if job:
+        job.stop()
+        _save_jobs_to_disk()
     return jsonify({'status': 'stopped'})
 
 
