@@ -1,5 +1,7 @@
 import argparse
 import asyncio
+import threading
+import requests
 from flask import Flask, request, jsonify, abort
 
 from NovaApi.ListDevices.nbe_list_devices import request_device_list
@@ -13,6 +15,8 @@ from NovaApi.ExecuteAction.LocateTracker.decrypt_locations import extract_locati
 
 app = Flask(__name__)
 API_TOKEN = None
+EXTERNAL_URL = None
+periodic_jobs = {}
 
 
 def _require_bearer_token():
@@ -71,10 +75,97 @@ def _fetch_location(device_id):
     return extract_locations(result)
 
 
+def _get_latest_location(locations):
+    # Pick the location with the latest timestamp that has coordinates
+    with_coords = [l for l in locations if 'latitude' in l and 'longitude' in l]
+    if not with_coords:
+        return None
+    return max(with_coords, key=lambda l: l.get('time', 0))
+
+
 @app.route('/devices/<device_id>/location', methods=['GET'])
 def get_device_location(device_id):
     locations = _fetch_location(device_id)
     return jsonify({'locations': locations})
+
+
+def _upload_location(device_id, location):
+    if not EXTERNAL_URL:
+        raise RuntimeError('External service URL not configured')
+    if not location:
+        raise RuntimeError('No valid location')
+    data = {
+        'id': device_id,
+        'lat': location['latitude'],
+        'long': location['longitude'],
+    }
+    try:
+        requests.post(EXTERNAL_URL, data=data, timeout=10)
+    except Exception:
+        pass
+
+
+@app.route('/devices/<device_id>/position-single', methods=['POST'])
+def push_position_single(device_id):
+    locations = _fetch_location(device_id)
+    location = _get_latest_location(locations)
+    if not location:
+        abort(404, description='No location available')
+    _upload_location(device_id, location)
+    return jsonify({'status': 'uploaded'})
+
+
+class PeriodicUploader:
+    def __init__(self, device_id, interval):
+        self.device_id = device_id
+        self.interval = interval
+        self._stop_event = threading.Event()
+        self._thread = threading.Thread(target=self._run, daemon=True)
+
+    def start(self):
+        self._thread.start()
+
+    def stop(self):
+        self._stop_event.set()
+        self._thread.join()
+
+    def _run(self):
+        while not self._stop_event.is_set():
+            try:
+                locations = _fetch_location(self.device_id)
+                location = _get_latest_location(locations)
+                if location:
+                    _upload_location(self.device_id, location)
+            except Exception:
+                pass
+            if self._stop_event.wait(self.interval):
+                break
+
+
+@app.route('/devices/<device_id>/position-periodic', methods=['POST'])
+def start_periodic_upload(device_id):
+    try:
+        interval = float(request.args.get('interval', '0'))
+    except ValueError:
+        abort(400, description='Invalid interval')
+    if interval <= 0:
+        abort(400, description='Interval must be > 0')
+    if device_id in periodic_jobs:
+        abort(400, description='Job already running')
+
+    job = PeriodicUploader(device_id, interval)
+    periodic_jobs[device_id] = job
+    job.start()
+    return jsonify({'status': 'started', 'interval': interval})
+
+
+@app.route('/devices/<device_id>/position-stop', methods=['POST'])
+def stop_periodic_upload(device_id):
+    job = periodic_jobs.pop(device_id, None)
+    if not job:
+        abort(404, description='No running job for device')
+    job.stop()
+    return jsonify({'status': 'stopped'})
 
 
 def main():
@@ -82,10 +173,13 @@ def main():
     parser.add_argument('--auth-token', required=True, help='Bearer token that clients must supply')
     parser.add_argument('--host', default='0.0.0.0')
     parser.add_argument('--port', type=int, default=5500)
+    parser.add_argument('--external-url', required=True, help='URL to upload positions to')
     args = parser.parse_args()
 
     global API_TOKEN
+    global EXTERNAL_URL
     API_TOKEN = args.auth_token
+    EXTERNAL_URL = args.external_url
 
     app.run(host=args.host, port=args.port)
 
