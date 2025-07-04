@@ -15,7 +15,7 @@ from NovaApi.ExecuteAction.LocateTracker.decrypt_locations import extract_locati
 
 app = Flask(__name__)
 API_TOKEN = None
-EXTERNAL_URL = None
+PUSH_URL = None
 periodic_jobs = {}
 
 
@@ -90,8 +90,8 @@ def get_device_location(device_id):
 
 
 def _upload_location(device_id, location):
-    if not EXTERNAL_URL:
-        raise RuntimeError('External service URL not configured')
+    if not PUSH_URL:
+        raise RuntimeError('Push service URL not configured')
     if not location:
         raise RuntimeError('No valid location')
     data = {
@@ -100,7 +100,7 @@ def _upload_location(device_id, location):
         'long': location['longitude'],
     }
     try:
-        requests.post(EXTERNAL_URL, data=data, timeout=10)
+        requests.post(PUSH_URL, data=data, timeout=10)
     except Exception:
         pass
 
@@ -173,13 +173,13 @@ def main():
     parser.add_argument('--auth-token', required=True, help='Bearer token that clients must supply')
     parser.add_argument('--host', default='0.0.0.0')
     parser.add_argument('--port', type=int, default=5500)
-    parser.add_argument('--external-url', required=True, help='URL to upload positions to')
+    parser.add_argument('--push-url', help='URL to upload locations to')
     args = parser.parse_args()
 
     global API_TOKEN
-    global EXTERNAL_URL
+    global PUSH_URL
     API_TOKEN = args.auth_token
-    EXTERNAL_URL = args.external_url
+    PUSH_URL = args.push_url
 
     app.run(host=args.host, port=args.port)
 
