@@ -1,6 +1,7 @@
 import argparse
 import asyncio
 import threading
+import json
 import requests
 from flask import Flask, request, jsonify, abort
 
@@ -17,6 +18,39 @@ app = Flask(__name__)
 API_TOKEN = None
 PUSH_URL = None
 periodic_jobs = {}
+PERSISTENCE_FILE = 'periodic_jobs.json'
+
+
+def _load_jobs_from_disk():
+    try:
+        with open(PERSISTENCE_FILE, 'r') as f:
+            data = json.load(f)
+        return {str(k): float(v) for k, v in data.items()}
+    except FileNotFoundError:
+        return {}
+    except Exception:
+        return {}
+
+
+def _save_jobs_to_disk():
+    data = {device_id: job.interval for device_id, job in periodic_jobs.items()}
+    try:
+        with open(PERSISTENCE_FILE, 'w') as f:
+            json.dump(data, f)
+    except Exception:
+        pass
+
+
+def _restore_jobs():
+    jobs = _load_jobs_from_disk()
+    for device_id, interval in jobs.items():
+        try:
+            job = PeriodicUploader(device_id, interval)
+            periodic_jobs[device_id] = job
+            job.start()
+        except Exception:
+            pass
+    _save_jobs_to_disk()
 
 
 def _require_bearer_token():
@@ -152,6 +186,7 @@ def start_periodic_upload(device_id):
     new_job = PeriodicUploader(device_id, interval)
     periodic_jobs[device_id] = new_job
     new_job.start()
+    _save_jobs_to_disk()
 
     return jsonify({'status': 'started', 'interval': interval})
 
@@ -161,6 +196,7 @@ def stop_periodic_upload(device_id):
     job = periodic_jobs.pop(device_id, None)
     if job:
         job.stop()
+        _save_jobs_to_disk()
     return jsonify({'status': 'stopped'})
 
 
@@ -176,6 +212,8 @@ def main():
     global PUSH_URL
     API_TOKEN = args.auth_token
     PUSH_URL = args.push_url
+
+    _restore_jobs()
 
     app.run(host=args.host, port=args.port)
 
