@@ -20,6 +20,7 @@ API_TOKEN = None
 PUSH_URL = None
 periodic_jobs = {}
 PERSISTENCE_FILE = 'periodic_jobs.json'
+_fetch_location_lock = threading.Lock()
 
 
 def _load_jobs_from_disk():
@@ -97,14 +98,15 @@ def _fetch_location(device_id, timeout=15):
             result = update
             done.set()
 
-    fcm_token = FcmReceiver().register_for_location_updates(handler)
+    with _fetch_location_lock:
+        fcm_token = FcmReceiver().register_for_location_updates(handler)
 
-    try:
-        payload = create_location_request(device_id, fcm_token, request_uuid)
-        nova_request(NOVA_ACTION_API_SCOPE, payload)
-        asyncio.get_event_loop().run_until_complete(asyncio.wait_for(done.wait(), timeout))
-    finally:
-        FcmReceiver().stop_listening()
+        try:
+            payload = create_location_request(device_id, fcm_token, request_uuid)
+            nova_request(NOVA_ACTION_API_SCOPE, payload)
+            asyncio.get_event_loop().run_until_complete(asyncio.wait_for(done.wait(), timeout))
+        finally:
+            FcmReceiver().stop_listening()
 
     return extract_locations(result) if result else []
 
