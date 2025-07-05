@@ -207,14 +207,10 @@ def stop_periodic_upload(device_id):
 
 def main():
     parser = argparse.ArgumentParser(description="Google Find Hub Sync")
-    parser.add_argument('--auth-token', default=os.getenv('AUTH_TOKEN'),
-                        help='Bearer token that clients must supply. Can also be set via AUTH_TOKEN env var')
-    parser.add_argument('--host', default=os.getenv('HOST', '0.0.0.0'),
-                        help='Interface to bind to. Can also be set via HOST env var')
-    parser.add_argument('--port', type=int, default=int(os.getenv('PORT', '5500')),
-                        help='Port to listen on. Can also be set via PORT env var')
-    parser.add_argument('--push-url', default=os.getenv('PUSH_URL'),
-                        help='URL to upload locations to. Can also be set via PUSH_URL env var')
+    parser.add_argument('--auth-token', default=os.getenv('AUTH_TOKEN'))
+    parser.add_argument('--host', default=os.getenv('HOST', '0.0.0.0'))
+    parser.add_argument('--port', type=int, default=int(os.getenv('PORT', '5500')))
+    parser.add_argument('--push-url', default=os.getenv('PUSH_URL'))
     args = parser.parse_args()
 
     if not args.auth_token:
