@@ -82,26 +82,30 @@ def _ensure_event_loop():
         asyncio.set_event_loop(loop)
 
 
-def _fetch_location(device_id):
+def _fetch_location(device_id, timeout=15):
     _ensure_event_loop()
 
     result = None
     request_uuid = generate_random_uuid()
+    done = asyncio.Event()
 
     def handler(resp_hex):
         nonlocal result
         update = parse_device_update_protobuf(resp_hex)
         if update.fcmMetadata.requestUuid == request_uuid:
             result = update
+            done.set()
 
     fcm_token = FcmReceiver().register_for_location_updates(handler)
-    payload = create_location_request(device_id, fcm_token, request_uuid)
-    nova_request(NOVA_ACTION_API_SCOPE, payload)
 
-    while result is None:
-        asyncio.get_event_loop().run_until_complete(asyncio.sleep(0.1))
+    try:
+        payload = create_location_request(device_id, fcm_token, request_uuid)
+        nova_request(NOVA_ACTION_API_SCOPE, payload)
+        asyncio.get_event_loop().run_until_complete(asyncio.wait_for(done.wait(), timeout))
+    finally:
+        FcmReceiver().stop_listening()
 
-    return extract_locations(result)
+    return extract_locations(result) if result else []
 
 
 def _get_latest_location(locations):

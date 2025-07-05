@@ -66,8 +66,6 @@ def retrieve_identity_key(device_registration: DeviceRegistration) -> bytes:
             print(f"Failed to decrypt identity key encrypted with owner key version {encrypted_user_secrets.ownerKeyVersion}, current owner key version is {current_owner_key_version}.\nThis may happen if you reset your end-to-end-encrypted data. To resolve this issue, open the folder 'Auth' and delete the file 'secrets.json'.")
             exit(1)
 
-# Extract location details for programmatic use
-# Returns a list of dictionaries containing location data
 
 def extract_locations(device_update_protobuf):
     device_registration = device_update_protobuf.deviceMetadata.information.deviceRegistration
@@ -114,8 +112,6 @@ def extract_locations(device_update_protobuf):
                 "is_own_report": loc.geoLocation.encryptedReport.isOwnReport
             })
     return locations
-
-
 
 
 def decrypt_location_response_locations(device_update_protobuf):
