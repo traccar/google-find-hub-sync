@@ -76,17 +76,9 @@ def list_devices():
     return jsonify({'devices': devices})
 
 
-def _ensure_event_loop():
-    try:
-        asyncio.get_running_loop()
-    except RuntimeError:
-        loop = asyncio.new_event_loop()
-        asyncio.set_event_loop(loop)
-
-
 def _fetch_location(device_id, timeout=15):
-    _ensure_event_loop()
-
+    loop = asyncio.new_event_loop()
+    asyncio.set_event_loop(loop)
     result = None
     request_uuid = generate_random_uuid()
     done = asyncio.Event()
@@ -107,6 +99,13 @@ def _fetch_location(device_id, timeout=15):
             asyncio.get_event_loop().run_until_complete(asyncio.wait_for(done.wait(), timeout))
         finally:
             FcmReceiver().stop_listening()
+            pending = [t for t in asyncio.all_tasks(loop) if not t.done()]
+            for task in pending:
+                task.cancel()
+            loop.run_until_complete(asyncio.gather(*pending, return_exceptions=True))
+            loop.run_until_complete(loop.shutdown_asyncgens())
+            loop.close()
+            asyncio.set_event_loop(None)
 
     return extract_locations(result) if result else []
 
