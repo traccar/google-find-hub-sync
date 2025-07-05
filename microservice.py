@@ -131,6 +131,7 @@ def _upload_location(device_id, location):
         'id': device_id,
         'lat': location['latitude'],
         'lon': location['longitude'],
+        'timestamp': location['time'],
     }
     try:
         requests.post(PUSH_URL, data=data, timeout=10)
