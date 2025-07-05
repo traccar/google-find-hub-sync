@@ -2,6 +2,7 @@ import argparse
 import asyncio
 import threading
 import json
+import os
 import requests
 from flask import Flask, request, jsonify, abort
 
@@ -206,11 +207,18 @@ def stop_periodic_upload(device_id):
 
 def main():
     parser = argparse.ArgumentParser(description="Google Find Hub Sync")
-    parser.add_argument('--auth-token', required=True, help='Bearer token that clients must supply')
-    parser.add_argument('--host', default='0.0.0.0')
-    parser.add_argument('--port', type=int, default=5500)
-    parser.add_argument('--push-url', help='URL to upload locations to')
+    parser.add_argument('--auth-token', default=os.getenv('AUTH_TOKEN'),
+                        help='Bearer token that clients must supply. Can also be set via AUTH_TOKEN env var')
+    parser.add_argument('--host', default=os.getenv('HOST', '0.0.0.0'),
+                        help='Interface to bind to. Can also be set via HOST env var')
+    parser.add_argument('--port', type=int, default=int(os.getenv('PORT', '5500')),
+                        help='Port to listen on. Can also be set via PORT env var')
+    parser.add_argument('--push-url', default=os.getenv('PUSH_URL'),
+                        help='URL to upload locations to. Can also be set via PUSH_URL env var')
     args = parser.parse_args()
+
+    if not args.auth_token:
+        parser.error('argument --auth-token or AUTH_TOKEN environment variable is required')
 
     global API_TOKEN
     global PUSH_URL

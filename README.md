@@ -38,3 +38,23 @@ For more information, check the [README in the ZephyrFirmware folder](ZephyrFirm
 
 ### iOS App
 You can also use my [iOS App](https://testflight.apple.com/join/rGqa2mTe) to access your Find My Device trackers on the go.
+
+### Running the microservice with Docker
+
+This repository contains a small Flask-based microservice in `microservice.py`.
+A `Dockerfile` is provided so it can easily be executed without installing
+all Python dependencies on the host system.
+
+All command line options can also be configured using environment variables:
+
+- `AUTH_TOKEN` – bearer token clients must supply (required)
+- `HOST` – interface to bind to (default `0.0.0.0`)
+- `PORT` – port to listen on (default `5500`)
+- `PUSH_URL` – optional URL to which locations are uploaded
+
+To build and run the container:
+
+```bash
+docker build -t google-find-hub-sync .
+docker run -p 5500:5500 -e AUTH_TOKEN=<token> google-find-hub-sync
+```
