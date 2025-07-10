@@ -7,7 +7,7 @@ Currently, it is possible to query Find My Device / Find Hub trackers and Androi
 
 ### How to use
 - Clone this repository: `git clone` or download the ZIP file
-- Change into the directory: `cd GoogleFindMyTools`
+- Change into the directory: `cd google-find-hub-sync`
 - Optional: Create venv: `python -m venv venv`
 - Optional: Activate venv: `venv\Scripts\activate` (Windows) or `source venv/bin/activate` (Linux & macOS)
 - Install all required packages: `pip install -r requirements.txt`
