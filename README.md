@@ -10,6 +10,12 @@ This fork is maintained under the [Traccar](https://www.traccar.org) organizatio
 Currently, it is possible to query Find My Device / Find Hub trackers and Android devices, read out their E2EE keys, and decrypt encrypted locations sent from the Find My Device / Find Hub network. You can also send register your own ESP32- or Zephyr-based trackers, as described below.
 
 ### How to use
+
+> [!CAUTION]
+> Before starting, ensure you have Chrome and Python updated.
+> 
+> **If Chrome is not up to date, the script will NOT work, guaranteed!**
+
 - Clone this repository: `git clone` or download the ZIP file
 - Change into the directory: `cd GoogleFindMyTools`
 - Optional: Create venv: `python -m venv venv`
@@ -28,6 +34,7 @@ The authentication results are stored in `Auth/secrets.json`. If you intend to r
 - "Your encryption data is locked on your device" is shown if you have never set up Find My Device on an Android device. Solution: Login with your Google Account on an Android device, go to Settings > Google > All Services > Find My Device > Find your offline devices > enable "With network in all areas" or "With network in high-traffic areas only". If "Find your offline devices" is not shown in Settings, you will need to download the Find My Device app from Google's Play Store, and pair a real Find My Device tracker with your device to force-enable the Find My Device network.
 - No support for trackers using the P-256 curve and 32-Byte advertisements. Regular trackers don't seem to use this curve at all - I can only confirm that it is used with Sony's WH1000XM5 headphones.
 - No support for the authentication process on ARM Linux
+- If you receive "ssl.SSLCertVerificationError" when running the script, try to follow [this answer](https://stackoverflow.com/a/53310545).
 - Please also consider the issues listed in the [README in the ESP32Firmware folder](ESP32Firmware/README.md) if you want to register custom trackers.
 
 ### Firmware for custom ESP32-based trackers

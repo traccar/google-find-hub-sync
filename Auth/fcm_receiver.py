@@ -1,6 +1,7 @@
 import asyncio
 import base64
 import binascii
+import threading
 
 from Auth.firebase_messaging import FcmRegisterConfig, FcmPushClient
 from Auth.token_cache import set_cached_value, get_cached_value
@@ -9,6 +10,8 @@ class FcmReceiver:
 
     _instance = None
     _listening = False
+    _loop = None
+    _loop_thread = None
 
     def __new__(cls, *args, **kwargs):
         if cls._instance is None:
@@ -26,12 +29,18 @@ class FcmReceiver:
         api_key = "AIzaSyD_gko3P392v6how2H7UpdeXQ0v2HLettc"
         message_sender_id = "289722593072"
 
+        # APK signing certificate SHA1
+        android_cert_sha1 = "38918a453d07199354f8b19af05ec6562ced5788"
+        bundle_id = "com.google.android.apps.adm"
+
         fcm_config = FcmRegisterConfig(
             project_id=project_id,
             app_id=app_id,
             api_key=api_key,
             messaging_sender_id=message_sender_id,
-            bundle_id="com.google.android.apps.adm",
+            bundle_id=bundle_id,
+            android_package=bundle_id,
+            android_cert_sha1=android_cert_sha1
         )
 
         self.credentials = get_cached_value('fcm_credentials')
@@ -42,7 +51,7 @@ class FcmReceiver:
     def register_for_location_updates(self, callback):
 
         if not self._listening:
-            asyncio.get_event_loop().run_until_complete(self._register_for_fcm_and_listen())
+            self._start_listener_in_background()
 
         self.location_update_callbacks.append(callback)
 
@@ -50,14 +59,15 @@ class FcmReceiver:
 
 
     def stop_listening(self):
-        asyncio.get_event_loop().run_until_complete(self.pc.stop())
+        if self._loop and self._loop.is_running():
+            asyncio.run_coroutine_threadsafe(self.pc.stop(), self._loop)
         self._listening = False
 
 
     def get_android_id(self):
 
         if self.credentials is None:
-            return asyncio.get_event_loop().run_until_complete(self._register_for_fcm_and_listen())
+            return self._start_listener_in_background()
 
         return self.credentials['gcm']['android_id']
 
@@ -106,9 +116,32 @@ class FcmReceiver:
 
     async def _register_for_fcm_and_listen(self):
         await self._register_for_fcm()
+        # Start the FCM listener
         await self.pc.start()
+
+    def _run_event_loop_in_thread(self):
+        """Run the event loop in a background thread"""
+        asyncio.set_event_loop(self._loop)
+        self._loop.run_forever()
+
+    def _start_listener_in_background(self):
+        """Start FCM listener in a background thread with its own event loop"""
+        self._loop = asyncio.new_event_loop()
+        self._loop_thread = threading.Thread(target=self._run_event_loop_in_thread, daemon=True)
+        self._loop_thread.start()
+
+        # Register for FCM first (blocking)
+        temp_loop = asyncio.new_event_loop()
+        asyncio.set_event_loop(temp_loop)
+        temp_loop.run_until_complete(self._register_for_fcm())
+        temp_loop.close()
+
+        # Now start the listener in the background loop
+        asyncio.run_coroutine_threadsafe(self.pc.start(), self._loop)
         self._listening = True
         print("[FCMReceiver] Listening for notifications. This can take a few seconds...")
+
+        return self.credentials['gcm']['android_id']
 
 
 if __name__ == "__main__":

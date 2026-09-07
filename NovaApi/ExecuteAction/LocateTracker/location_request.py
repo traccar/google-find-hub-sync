@@ -4,6 +4,7 @@
 #
 
 import asyncio
+import time
 
 from Auth.fcm_receiver import FcmReceiver
 from NovaApi.ExecuteAction.LocateTracker.decrypt_locations import decrypt_location_response_locations
@@ -51,7 +52,7 @@ def get_location_data_for_device(canonic_device_id, name):
     nova_request(NOVA_ACTION_API_SCOPE, hex_payload)
 
     while result is None:
-        asyncio.get_event_loop().run_until_complete(asyncio.sleep(0.1))
+        time.sleep(0.1)
 
     decrypt_location_response_locations(result)
 

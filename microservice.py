@@ -1,5 +1,4 @@
 import argparse
-import asyncio
 import threading
 import json
 import os
@@ -77,11 +76,9 @@ def list_devices():
 
 
 def _fetch_location(device_id, timeout=15):
-    loop = asyncio.new_event_loop()
-    asyncio.set_event_loop(loop)
     result = None
     request_uuid = generate_random_uuid()
-    done = asyncio.Event()
+    done = threading.Event()
 
     def handler(resp_hex):
         nonlocal result
@@ -91,23 +88,27 @@ def _fetch_location(device_id, timeout=15):
             done.set()
 
     with _fetch_location_lock:
-        fcm_token = FcmReceiver().register_for_location_updates(handler)
-
+        receiver = FcmReceiver()
+        # Clear any stale callbacks from previous calls (e.g. timed-out fetches)
+        # before registering the new handler for this request.
+        receiver.location_update_callbacks.clear()
         try:
+            fcm_token = receiver.register_for_location_updates(handler)
             payload = create_location_request(device_id, fcm_token, request_uuid)
             nova_request(NOVA_ACTION_API_SCOPE, payload)
-            asyncio.get_event_loop().run_until_complete(asyncio.wait_for(done.wait(), timeout))
+            got_response = done.wait(timeout)
+            print(f"[FetchLocation] device={device_id} got_response={got_response} result={'yes' if result else 'no'}")
         finally:
-            FcmReceiver().stop_listening()
-            pending = [t for t in asyncio.all_tasks(loop) if not t.done()]
-            for task in pending:
-                task.cancel()
-            loop.run_until_complete(asyncio.gather(*pending, return_exceptions=True))
-            loop.run_until_complete(loop.shutdown_asyncgens())
-            loop.close()
-            asyncio.set_event_loop(None)
+            # Remove only this call's handler — do NOT call stop_listening().
+            # The FCM listener is a singleton and must stay alive across fetches
+            # to avoid creating new asyncio event loops and leaking file descriptors.
+            try:
+                receiver.location_update_callbacks.remove(handler)
+            except ValueError:
+                pass
 
-    return extract_locations(result) if result else []
+    locations = extract_locations(result) if result else []
+    return locations if locations is not None else []
 
 
 def _get_latest_location(locations):
@@ -134,10 +135,12 @@ def _upload_location(device_id, location):
         'lon': location['longitude'],
         'timestamp': location['time'],
     }
+    print(f"[UploadLocation] Sending to Traccar: {data}")
     try:
-        requests.post(PUSH_URL, data=data, timeout=10)
-    except Exception:
-        pass
+        resp = requests.get(PUSH_URL, params=data, timeout=10)
+        print(f"[UploadLocation] Response: {resp.status_code}")
+    except Exception as e:
+        print(f"[UploadLocation] Error: {e}")
 
 
 @app.route('/devices/<device_id>/position-single', methods=['POST'])
@@ -167,12 +170,17 @@ class PeriodicUploader:
     def _run(self):
         while not self._stop_event.is_set():
             try:
+                print(f"[PeriodicUploader] Fetching location for {self.device_id}")
                 locations = _fetch_location(self.device_id)
+                print(f"[PeriodicUploader] Got {len(locations) if locations else 0} locations for {self.device_id}")
                 location = _get_latest_location(locations)
                 if location:
+                    print(f"[PeriodicUploader] Uploading: {location}")
                     _upload_location(self.device_id, location)
-            except Exception:
-                pass
+                else:
+                    print(f"[PeriodicUploader] No valid location for {self.device_id}")
+            except Exception as e:
+                print(f"[PeriodicUploader] Error: {e}")
             if self._stop_event.wait(self.interval):
                 break
 
@@ -210,7 +218,8 @@ def stop_periodic_upload(device_id):
 def main():
     parser = argparse.ArgumentParser(description="Google Find Hub Sync")
     parser.add_argument('--auth-token', default=os.getenv('AUTH_TOKEN'))
-    parser.add_argument('--host', default=os.getenv('HOST', '0.0.0.0'))
+    #parser.add_argument('--host', default=os.getenv('HOST', '0.0.0.0'))
+    parser.add_argument('--host', default=os.getenv('HOST', '127.0.0.1'))
     parser.add_argument('--port', type=int, default=int(os.getenv('PORT', '5500')))
     parser.add_argument('--push-url', default=os.getenv('PUSH_URL'))
     args = parser.parse_args()
